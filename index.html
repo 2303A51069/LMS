@@ -1,0 +1,355 @@
+from abc import ABC, abstractmethod
+from typing import List, Dict, Any
+
+
+# ---------------------------
+# Observer Pattern
+# ---------------------------
+class Observer(ABC):
+    @abstractmethod
+    def update(self, message: str) -> None:
+        pass
+
+
+class Subject(ABC):
+    @abstractmethod
+    def attach(self, obs: Observer) -> None:
+        pass
+
+    @abstractmethod
+    def detach(self, obs: Observer) -> None:
+        pass
+
+    @abstractmethod
+    def notify(self, message: str) -> None:
+        pass
+
+
+class Student(Observer):
+    def __init__(self, student_id: str, name: str):
+        self.student_id = student_id
+        self.name = name
+        self.enrolled_courses: List["Course"] = []
+        # store notifications if needed
+        self.notifications: List[str] = []
+
+    def update(self, message: str) -> None:
+        self.notifications.append(message)
+        print(f"[Notification -> {self.name}] {message}")
+
+    def __repr__(self):
+        return f"Student({self.student_id}, {self.name})"
+
+
+class Instructor(Observer):
+    def __init__(self, instructor_id: str, name: str):
+        self.instructor_id = instructor_id
+        self.name = name
+
+    def update(self, message: str) -> None:
+        print(f"[Instructor Notification -> {self.name}] {message}")
+
+    def __repr__(self):
+        return f"Instructor({self.instructor_id}, {self.name})"
+
+
+class LMS(Subject):
+    """LMS acts as a central subject. Courses may also be subjects."""
+    def __init__(self):
+        self._observers: List[Observer] = []
+        self.courses: Dict[str, "Course"] = {}
+
+    def attach(self, obs: Observer) -> None:
+        if obs not in self._observers:
+            self._observers.append(obs)
+
+    def detach(self, obs: Observer) -> None:
+        if obs in self._observers:
+            self._observers.remove(obs)
+
+    def notify(self, message: str) -> None:
+        for obs in list(self._observers):
+            obs.update(message)
+
+    def publish_course(self, course: "Course") -> None:
+        self.courses[course.course_id] = course
+        self.notify(f"New course published: {course.title} (ID: {course.course_id})")
+
+    def publish_announcement(self, announcement: str) -> None:
+        self.notify(f"LMS announcement: {announcement}")
+
+
+class Course(Subject):
+    def __init__(self, course_id: str, title: str, instructor: Instructor):
+        self.course_id = course_id
+        self.title = title
+        self.instructor = instructor
+        self._observers: List[Observer] = []
+        self.assignments: Dict[str, "Assignment"] = {}
+        self.enrolled_students: List[Student] = []
+
+    def attach(self, obs: Observer) -> None:
+        if obs not in self._observers:
+            self._observers.append(obs)
+
+    def detach(self, obs: Observer) -> None:
+        if obs in self._observers:
+            self._observers.remove(obs)
+
+    def notify(self, message: str) -> None:
+        for obs in list(self._observers):
+            obs.update(message)
+
+    def publish_assignment(self, assignment: "Assignment") -> None:
+        self.assignments[assignment.assignment_id] = assignment
+        self.notify(f"New assignment in {self.title}: {assignment.title}")
+
+    def enroll_student(self, student: Student) -> None:
+        if student not in self.enrolled_students:
+            self.enrolled_students.append(student)
+            self.attach(student)  # auto-subscribe student to course notifications
+            student.enrolled_courses.append(self)
+            print(f"{student.name} enrolled in {self.title}")
+
+    def drop_student(self, student: Student) -> None:
+        if student in self.enrolled_students:
+            self.enrolled_students.remove(student)
+            self.detach(student)
+            if self in student.enrolled_courses:
+                student.enrolled_courses.remove(self)
+            print(f"{student.name} dropped {self.title}")
+
+    def __repr__(self):
+        return f"Course({self.course_id}, {self.title})"
+
+
+# ---------------------------
+# Strategy Pattern (Grading)
+# ---------------------------
+class GradingStrategy(ABC):
+    @abstractmethod
+    def calculate_grade(self, marks: Dict[str, Any]) -> Any:
+        """
+        marks: dictionary with relevant keys, e.g. {'total': 85, 'max':100, 'credits':...}
+        Returns: grade representation according to the strategy.
+        """
+        pass
+
+
+class PercentageGrading(GradingStrategy):
+    def calculate_grade(self, marks: Dict[str, Any]) -> str:
+        total = marks.get("score", 0)
+        max_score = marks.get("max_score", 100)
+        pct = (total / max_score) * 100 if max_score else 0
+        return f"{pct:.2f}%"
+
+
+class CGPAGrading(GradingStrategy):
+    def calculate_grade(self, marks: Dict[str, Any]) -> float:
+        # naive example: convert percent to CGPA on 10 scale
+        total = marks.get("score", 0)
+        max_score = marks.get("max_score", 100)
+        pct = (total / max_score) * 100 if max_score else 0
+        cgpa = (pct / 10)  # simple mapping: 100% -> 10.0
+        return round(cgpa, 2)
+
+
+class PassFailGrading(GradingStrategy):
+    def __init__(self, pass_mark_pct: float = 40.0):
+        self.pass_mark_pct = pass_mark_pct
+
+    def calculate_grade(self, marks: Dict[str, Any]) -> str:
+        total = marks.get("score", 0)
+        max_score = marks.get("max_score", 100)
+        pct = (total / max_score) * 100 if max_score else 0
+        return "PASS" if pct >= self.pass_mark_pct else "FAIL"
+
+
+# A small class to represent gradebook entries
+class Gradebook:
+    def __init__(self, grading_strategy: GradingStrategy):
+        self.strategy = grading_strategy
+        self.records: Dict[str, Any] = {}  # student_id -> grade/result
+
+    def set_strategy(self, strategy: GradingStrategy) -> None:
+        self.strategy = strategy
+
+    def grade(self, student: Student, marks: Dict[str, Any]) -> None:
+        result = self.strategy.calculate_grade(marks)
+        self.records[student.student_id] = result
+        print(f"Graded {student.name}: {result}")
+
+
+# ---------------------------
+# Command Pattern
+# ---------------------------
+class Command(ABC):
+    @abstractmethod
+    def execute(self) -> None:
+        pass
+
+    def undo(self) -> None:
+        """Optional: implement undo for reversible commands."""
+        raise NotImplementedError("Undo not implemented for this command.")
+
+
+class EnrollCommand(Command):
+    def __init__(self, course: Course, student: Student):
+        self.course = course
+        self.student = student
+        self._executed = False
+
+    def execute(self) -> None:
+        self.course.enroll_student(self.student)
+        self._executed = True
+
+    def undo(self) -> None:
+        if self._executed:
+            self.course.drop_student(self.student)
+            self._executed = False
+
+
+class DropCommand(Command):
+    def __init__(self, course: Course, student: Student):
+        self.course = course
+        self.student = student
+        self._executed = False
+
+    def execute(self) -> None:
+        self.course.drop_student(self.student)
+        self._executed = True
+
+    def undo(self) -> None:
+        if self._executed:
+            self.course.enroll_student(self.student)
+            self._executed = False
+
+
+class SubmitAssignmentCommand(Command):
+    def __init__(self, course: Course, assignment: "Assignment", student: Student, submission: Any):
+        self.course = course
+        self.assignment = assignment
+        self.student = student
+        self.submission = submission
+        self._executed = False
+
+    def execute(self) -> None:
+        self.assignment.receive_submission(self.student, self.submission)
+        self._executed = True
+
+    # Typically submission cannot be undone easily; provide a simple undo to remove if needed
+    def undo(self) -> None:
+        if self._executed:
+            self.assignment.remove_submission(self.student)
+            self._executed = False
+
+
+class CommandInvoker:
+    def __init__(self):
+        self._history: List[Command] = []
+
+    def execute(self, cmd: Command) -> None:
+        cmd.execute()
+        self._history.append(cmd)
+
+    def undo_last(self) -> None:
+        if self._history:
+            cmd = self._history.pop()
+            try:
+                cmd.undo()
+            except NotImplementedError:
+                print("This command cannot be undone.")
+
+
+# ---------------------------
+# Domain: Assignment, Submission
+# ---------------------------
+class Assignment:
+    def __init__(self, assignment_id: str, title: str, max_score: int = 100):
+        self.assignment_id = assignment_id
+        self.title = title
+        self.max_score = max_score
+        self.submissions: Dict[str, Any] = {}  # student_id -> submission data
+        self.grades: Dict[str, Any] = {}       # student_id -> grade result
+
+    def receive_submission(self, student: Student, submission: Any) -> None:
+        self.submissions[student.student_id] = submission
+        print(f"{student.name} submitted '{self.title}'")
+
+    def remove_submission(self, student: Student) -> None:
+        if student.student_id in self.submissions:
+            del self.submissions[student.student_id]
+            print(f"Submission removed for {student.name} on '{self.title}'")
+
+    def grade_submission(self, student: Student, grade_result: Any) -> None:
+        self.grades[student.student_id] = grade_result
+        print(f"Assignment '{self.title}' graded for {student.name}: {grade_result}")
+
+
+# ---------------------------
+# Example Usage / Demo
+# ---------------------------
+if __name__ == "__main__":
+    # Create LMS and participants
+    lms = LMS()
+    alice = Student("S001", "Alice")
+    bob = Student("S002", "Bob")
+    prof = Instructor("I001", "Dr. Smith")
+
+    # Students and instructor subscribe to LMS-level announcements
+    lms.attach(alice)
+    lms.attach(bob)
+    lms.attach(prof)
+
+    # Create a Course
+    cs101 = Course("C101", "Intro to Programming", prof)
+
+    # Publish course from LMS (observers get notified)
+    lms.publish_course(cs101)
+
+    # Create an assignment and publish on course
+    a1 = Assignment("A1", "Assignment 1: Hello World", max_score=100)
+    cs101.publish_assignment(a1)  # no students attached yet, but course notify method works
+
+    # Command invoker
+    invoker = CommandInvoker()
+
+    # Enroll students using commands
+    enroll_alice = EnrollCommand(cs101, alice)
+    enroll_bob = EnrollCommand(cs101, bob)
+    invoker.execute(enroll_alice)
+    invoker.execute(enroll_bob)
+
+    # After enrolling, publishing assignment will notify enrolled students
+    cs101.publish_assignment(a1)
+
+    # Students submit assignment via commands
+    submit_alice = SubmitAssignmentCommand(cs101, a1, alice, {"file": "alice_a1.zip", "score": 85})
+    submit_bob = SubmitAssignmentCommand(cs101, a1, bob, {"file": "bob_a1.zip", "score": 72})
+    invoker.execute(submit_alice)
+    invoker.execute(submit_bob)
+
+    # Grading strategies
+    gradebook = Gradebook(PercentageGrading())
+    # grade alice and bob using stored submission scores
+    gradebook.grade(alice, {"score": a1.submissions[alice.student_id]["score"], "max_score": a1.max_score})
+    gradebook.set_strategy(CGPAGrading())
+    gradebook.grade(bob, {"score": a1.submissions[bob.student_id]["score"], "max_score": a1.max_score})
+
+    # Change grading policy later (Strategy pattern demo)
+    gradebook.set_strategy(PassFailGrading(pass_mark_pct=50.0))
+    gradebook.grade(alice, {"score": a1.submissions[alice.student_id]["score"], "max_score": a1.max_score})
+    gradebook.grade(bob, {"score": a1.submissions[bob.student_id]["score"], "max_score": a1.max_score})
+
+    # Undo last command: remove Bob's submission
+    invoker.undo_last()  # will undo bob submission
+
+    # Drop a student via command
+    drop_bob = DropCommand(cs101, bob)
+    invoker.execute(drop_bob)
+
+    # Show notifications Alice and Bob received
+    print("\nAlice notifications:", alice.notifications)
+    print("Bob notifications:", bob.notifications)
+    # Show gradebook records
+    print("Gradebook records:", gradebook.records)
